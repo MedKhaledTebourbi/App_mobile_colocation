@@ -1,0 +1,39 @@
+name: gestion_user_app
+description: "A new Flutter project."
+publish_to: 'none' # Pour empêcher la publication sur pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  image_picker: ^0.8.7+5
+  # Icônes Cupertino
+  cupertino_icons: ^1.0.8
+
+  # Package pour gérer l'état (Provider)
+  provider: ^6.0.5
+
+  # SQLite
+  sqflite: ^2.2.0
+
+  # Pour gérer le chemin de la DB
+  path_provider: ^2.0.0
+  path: ^1.8.0
+
+  # Hashing mot de passe
+  crypto: ^3.0.0
+
+  # Pour stocker la session utilisateur
+  shared_preferences: ^2.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
