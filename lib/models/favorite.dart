@@ -1,6 +1,6 @@
 class Favorite {
   int? id;
-  String houseId;
+  int houseId;
   String houseTitle;
   String houseAddress;
   String houseImage;
@@ -8,6 +8,7 @@ class Favorite {
   double houseRating;
   int bedrooms;
   int bathrooms;
+  String userEmail;
   DateTime createdAt;
 
   Favorite({
@@ -20,6 +21,7 @@ class Favorite {
     required this.houseRating,
     required this.bedrooms,
     required this.bathrooms,
+    required this.userEmail,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -34,22 +36,40 @@ class Favorite {
       'house_rating': houseRating,
       'bedrooms': bedrooms,
       'bathrooms': bathrooms,
+      'user_email': userEmail,
       'created_at': createdAt.toIso8601String(),
     };
   }
 
   factory Favorite.fromMap(Map<String, dynamic> map) {
     return Favorite(
-      id: map['id'] as int?,
-      houseId: map['house_id'] as String,
+      id: _toInt(map['id']),
+      houseId: _toInt(map['house_id'])!,
       houseTitle: map['house_title'] as String,
       houseAddress: map['house_address'] as String,
       houseImage: map['house_image'] as String,
-      housePrice: map['house_price'] as double,
-      houseRating: map['house_rating'] as double,
-      bedrooms: map['bedrooms'] as int,
-      bathrooms: map['bathrooms'] as int,
+      housePrice: _toDouble(map['house_price'])!,
+      houseRating: _toDouble(map['house_rating'])!,
+      bedrooms: _toInt(map['bedrooms'])!,
+      bathrooms: _toInt(map['bathrooms'])!,
+      userEmail: map['user_email'] as String? ?? '',
       createdAt: DateTime.parse(map['created_at'] as String),
     );
+  }
+
+  static int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 }

@@ -11,12 +11,17 @@ class DatabaseHelper {
 
   // Nom de la base de données
   static const String _databaseName = 'collo_database.db';
-  static const int _databaseVersion = 1;
+  static const int _databaseVersion = 12;
 
   // Tables
   static const String tableTransactions = 'transactions';
+  static const String tableBookings = 'bookings';
   static const String tableFavorites = 'favorites';
+  static const String tableNotifications = 'notifications';
   static const String tableExample = 'example_table';
+  static const String tableHouses = 'houses';
+  static const String tableChat = 'chat_messages';
+  static const String tablePayments = 'payments';
   
   static const String columnId = 'id';
   static const String columnName = 'name';
@@ -87,14 +92,174 @@ class DatabaseHelper {
         $columnCreatedAt TEXT NOT NULL
       )
     ''');
+
+    // Table des maisons
+    await db.execute('''
+      CREATE TABLE $tableHouses (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        price REAL NOT NULL,
+        address TEXT NOT NULL,
+        bedrooms INTEGER NOT NULL,
+        bathrooms INTEGER NOT NULL,
+        area REAL NOT NULL,
+        imageUrl TEXT NOT NULL,
+        isFavorite INTEGER NOT NULL DEFAULT 0,
+        rating REAL NOT NULL DEFAULT 0,
+        owner_email TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL
+      )
+    ''');
   }
 
   // Mise à jour de la base de données
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     // Gérer les migrations de schéma ici
-    if (oldVersion < newVersion) {
-      // Exemple: ajouter une nouvelle colonne
-      // await db.execute('ALTER TABLE $tableExample ADD COLUMN new_column TEXT');
+    if (oldVersion < 2 && newVersion >= 2) {
+      // Create houses table for version 2
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableHouses (
+          id INTEGER PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT NOT NULL,
+          price REAL NOT NULL,
+          address TEXT NOT NULL,
+          bedrooms INTEGER NOT NULL,
+          bathrooms INTEGER NOT NULL,
+          area REAL NOT NULL,
+          imageUrl TEXT NOT NULL,
+          isFavorite INTEGER NOT NULL DEFAULT 0,
+          rating REAL NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 3 && newVersion >= 3) {
+      // Add owner_email column to houses
+      await db.execute(
+        "ALTER TABLE $tableHouses ADD COLUMN owner_email TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (oldVersion < 4 && newVersion >= 4) {
+      // Add user_email column to favorites for user-specific favorites
+      await db.execute(
+        "ALTER TABLE $tableFavorites ADD COLUMN user_email TEXT NOT NULL DEFAULT ''",
+      );
+    }
+    if (oldVersion < 5 && newVersion >= 5) {
+      // Create notifications table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableNotifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          house_owner_email TEXT NOT NULL,
+          booker_email TEXT NOT NULL,
+          house_id INTEGER NOT NULL,
+          house_title TEXT NOT NULL,
+          booker_name TEXT NOT NULL,
+          check_in_date TEXT NOT NULL,
+          check_out_date TEXT NOT NULL,
+          total_price REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 7 && newVersion >= 7) {
+      // Create chat messages table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableChat (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          reservation_id INTEGER NOT NULL,
+          sender_email TEXT NOT NULL,
+          sender_name TEXT NOT NULL,
+          message TEXT NOT NULL,
+          timestamp TEXT NOT NULL,
+          is_read INTEGER NOT NULL DEFAULT 0
+        )
+      ''');
+    }
+    if (oldVersion < 8 && newVersion >= 8) {
+      // Add property_type, ownership_status, and owner_username columns to houses
+      try {
+        await db.execute(
+          "ALTER TABLE $tableHouses ADD COLUMN property_type TEXT NOT NULL DEFAULT 'House'",
+        );
+      } catch (e) {
+        // Column might already exist
+      }
+      try {
+        await db.execute(
+          "ALTER TABLE $tableHouses ADD COLUMN ownership_status TEXT NOT NULL DEFAULT 'For Rent'",
+        );
+      } catch (e) {
+        // Column might already exist
+      }
+      try {
+        await db.execute(
+          "ALTER TABLE $tableHouses ADD COLUMN owner_username TEXT NOT NULL DEFAULT ''",
+        );
+      } catch (e) {
+        // Column might already exist
+      }
+    }
+    if (oldVersion < 9 && newVersion >= 9) {
+      // Create payments table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tablePayments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          transaction_id INTEGER NOT NULL,
+          card_holder_name TEXT NOT NULL,
+          card_number TEXT NOT NULL,
+          expiry_date TEXT NOT NULL,
+          amount REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          payment_method TEXT NOT NULL DEFAULT 'credit_card',
+          created_at TEXT NOT NULL,
+          completed_at TEXT,
+          failure_reason TEXT
+        )
+      ''');
+    }
+    if (oldVersion < 10 && newVersion >= 10) {
+      // Add availability column to houses
+      try {
+        await db.execute(
+          "ALTER TABLE $tableHouses ADD COLUMN availability TEXT NOT NULL DEFAULT 'available'",
+        );
+      } catch (e) {
+        // Column might already exist
+      }
+    }
+    if (oldVersion < 11 && newVersion >= 11) {
+      // Create bookings table
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS $tableBookings (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          house_id INTEGER NOT NULL,
+          house_title TEXT NOT NULL,
+          house_image TEXT NOT NULL,
+          booker_name TEXT NOT NULL,
+          booker_email TEXT NOT NULL,
+          booker_phone TEXT NOT NULL,
+          check_in_date TEXT NOT NULL,
+          check_out_date TEXT NOT NULL,
+          number_of_guests INTEGER NOT NULL,
+          total_price REAL NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL
+        )
+      ''');
+    }
+    if (oldVersion < 12 && newVersion >= 12) {
+      // Add tag column to houses
+      try {
+        await db.execute(
+          "ALTER TABLE $tableHouses ADD COLUMN tag TEXT NOT NULL DEFAULT 'Available'",
+        );
+      } catch (e) {
+        // Column might already exist
+      }
     }
   }
 
@@ -175,6 +340,12 @@ class DatabaseHelper {
   Future<int> rawExecute(String sql, [List<dynamic>? arguments]) async {
     Database db = await database;
     return await db.rawInsert(sql, arguments);
+  }
+
+  // Raw Update
+  Future<int> rawUpdate(String sql, [List<dynamic>? arguments]) async {
+    Database db = await database;
+    return await db.rawUpdate(sql, arguments);
   }
 
   // Fermer la base de données

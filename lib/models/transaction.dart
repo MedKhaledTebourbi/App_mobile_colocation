@@ -1,6 +1,6 @@
 class Transaction {
   int? id;
-  String houseId;
+  int houseId;
   String houseTitle;
   String houseImage;
   String customerName;
@@ -30,8 +30,7 @@ class Transaction {
   }) : createdAt = createdAt ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
-    return {
-      'id': id,
+    final map = <String, dynamic>{
       'house_id': houseId,
       'house_title': houseTitle,
       'house_image': houseImage,
@@ -45,12 +44,16 @@ class Transaction {
       'status': status,
       'created_at': createdAt.toIso8601String(),
     };
+    if (id != null) {
+      map['id'] = id!;
+    }
+    return map;
   }
 
   factory Transaction.fromMap(Map<String, dynamic> map) {
     return Transaction(
-      id: map['id'] as int?,
-      houseId: map['house_id'] as String,
+      id: _toInt(map['id']),
+      houseId: _toInt(map['house_id'])!,
       houseTitle: map['house_title'] as String,
       houseImage: map['house_image'] as String,
       customerName: map['customer_name'] as String,
@@ -58,11 +61,27 @@ class Transaction {
       customerPhone: map['customer_phone'] as String,
       checkInDate: DateTime.parse(map['check_in_date'] as String),
       checkOutDate: DateTime.parse(map['check_out_date'] as String),
-      numberOfGuests: map['number_of_guests'] as int,
-      totalPrice: map['total_price'] as double,
+      numberOfGuests: _toInt(map['number_of_guests'])!,
+      totalPrice: _toDouble(map['total_price'])!,
       status: map['status'] as String,
       createdAt: DateTime.parse(map['created_at'] as String),
     );
+  }
+
+  static int? _toInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  static double? _toDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   int get numberOfDays {

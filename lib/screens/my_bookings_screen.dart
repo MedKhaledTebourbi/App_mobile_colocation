@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import '../models/transaction.dart' as app_transaction;
+import '../models/user.dart';
 import '../repositories/transaction_repository.dart';
+import '../services/house_status_service.dart';
+import '../services/house_availability_calculator.dart';
+import '../providers/house_provider.dart';
 
 class MyBookingsScreen extends StatefulWidget {
-  const MyBookingsScreen({super.key});
+  final User user;
+
+  const MyBookingsScreen({super.key, required this.user});
 
   @override
   State<MyBookingsScreen> createState() => _MyBookingsScreenState();
@@ -21,21 +27,50 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
   }
 
   Future<void> _loadTransactions() async {
-    setState(() {
-      _isLoading = true;
-    });
+    try {
+      setState(() {
+        _isLoading = true;
+      });
 
-    final transactions = await _transactionRepo.getAllTransactions();
-    setState(() {
-      _transactions = transactions;
-      _isLoading = false;
-    });
+      // Load transactions for the current user by email
+      final userTransactions = await _transactionRepo.getTransactionsByCustomerEmail(widget.user.email);
+      
+      if (mounted) {
+        setState(() {
+          _transactions = userTransactions;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors du chargement: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _updateTransactionStatus(
       app_transaction.Transaction transaction, String newStatus) async {
     transaction.status = newStatus;
     await _transactionRepo.updateTransaction(transaction);
+
+    // Update house tag based on transaction status
+    final houseStatusService = HouseStatusService();
+    if (newStatus == 'confirmed') {
+      await houseStatusService.markAsRented(transaction.houseId);
+    } else if (newStatus == 'cancelled') {
+      await houseStatusService.markAsAvailable(transaction.houseId);
+    } else if (newStatus == 'pending') {
+      await houseStatusService.markAsPending(transaction.houseId);
+    }
+
     _loadTransactions();
 
     if (mounted) {
@@ -125,7 +160,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     }
   }
 
-  void _showEditDialog(app_transaction.Transaction transaction) {
+  void _showBookingDetails(app_transaction.Transaction transaction) {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -137,36 +172,72 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const Text(
-              'Modifier le statut',
+              'Détails de la réservation',
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
               ),
             ),
             const SizedBox(height: 20),
-            ListTile(
-              leading: const Icon(Icons.pending, color: Colors.orange),
-              title: const Text('En attente'),
-              onTap: () {
-                Navigator.pop(context);
-                _updateTransactionStatus(transaction, 'pending');
-              },
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Statut:',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(transaction.status),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _getStatusText(transaction.status),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Note: Le propriétaire confirmera ou annulera votre réservation.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey[600],
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.check_circle, color: Colors.green),
-              title: const Text('Confirmé'),
-              onTap: () {
-                Navigator.pop(context);
-                _updateTransactionStatus(transaction, 'confirmed');
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.cancel, color: Colors.red),
-              title: const Text('Annulé'),
-              onTap: () {
-                Navigator.pop(context);
-                _updateTransactionStatus(transaction, 'cancelled');
-              },
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Fermer'),
+              ),
             ),
           ],
         ),
@@ -176,10 +247,16 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 
   Color _getStatusColor(String status) {
     switch (status) {
+      case 'approved':
       case 'confirmed':
         return Colors.green;
+      case 'rejected':
       case 'cancelled':
         return Colors.red;
+      case 'paid':
+        return Colors.blue;
+      case 'completed':
+        return Colors.purple;
       default:
         return Colors.orange;
     }
@@ -187,12 +264,39 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
 
   String _getStatusText(String status) {
     switch (status) {
+      case 'pending':
+        return 'En attente';
+      case 'approved':
+        return 'Approuvée';
+      case 'paid':
+        return 'Payée';
       case 'confirmed':
-        return 'Confirmé';
+        return 'Réservée';
+      case 'rejected':
+        return 'Rejetée';
       case 'cancelled':
-        return 'Annulé';
+        return 'Annulée';
+      case 'completed':
+        return 'Complétée';
       default:
         return 'En attente';
+    }
+  }
+
+  IconData _getStatusIcon(String status) {
+    switch (status) {
+      case 'approved':
+      case 'confirmed':
+        return Icons.check_circle;
+      case 'rejected':
+      case 'cancelled':
+        return Icons.cancel;
+      case 'paid':
+        return Icons.payment;
+      case 'completed':
+        return Icons.done_all;
+      default:
+        return Icons.schedule;
     }
   }
 
@@ -319,6 +423,8 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       fontSize: 18,
                                       fontWeight: FontWeight.bold,
                                     ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                   const SizedBox(height: 12),
                                   Row(
@@ -326,7 +432,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       const Icon(Icons.person,
                                           size: 16, color: Colors.grey),
                                       const SizedBox(width: 4),
-                                      Text(transaction.customerName),
+                                      Expanded(
+                                        child: Text(
+                                          transaction.customerName,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -335,7 +446,12 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       const Icon(Icons.email,
                                           size: 16, color: Colors.grey),
                                       const SizedBox(width: 4),
-                                      Text(transaction.customerEmail),
+                                      Expanded(
+                                        child: Text(
+                                          transaction.customerEmail,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -344,17 +460,20 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       const Icon(Icons.phone,
                                           size: 16, color: Colors.grey),
                                       const SizedBox(width: 4),
-                                      Text(transaction.customerPhone),
+                                      Expanded(
+                                        child: Text(
+                                          transaction.customerPhone,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                   const Divider(height: 24),
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
                                       Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           const Text(
                                             'Check-in',
@@ -364,18 +483,16 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '${transaction.checkInDate.day}/${transaction.checkInDate.month}/${transaction.checkInDate.year}',
+                                            '${transaction.checkInDate.day.toString().padLeft(2, '0')}/${transaction.checkInDate.month.toString().padLeft(2, '0')}/${transaction.checkInDate.year}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
                                         ],
                                       ),
-                                      const Icon(Icons.arrow_forward,
-                                          color: Colors.grey),
+                                      const Icon(Icons.arrow_forward, color: Colors.grey),
                                       Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.end,
+                                        crossAxisAlignment: CrossAxisAlignment.end,
                                         children: [
                                           const Text(
                                             'Check-out',
@@ -385,7 +502,7 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '${transaction.checkOutDate.day}/${transaction.checkOutDate.month}/${transaction.checkOutDate.year}',
+                                            '${transaction.checkOutDate.day.toString().padLeft(2, '0')}/${transaction.checkOutDate.month.toString().padLeft(2, '0')}/${transaction.checkOutDate.year}',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -396,25 +513,57 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
                                     children: [
-                                      Row(
+                                      const Icon(Icons.people, size: 16, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text('${transaction.numberOfGuests} invités'),
+                                      const SizedBox(width: 16),
+                                      const Icon(Icons.nights_stay, size: 16, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text('${transaction.numberOfDays} nuits'),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
-                                          const Icon(Icons.people,
-                                              size: 16, color: Colors.grey),
-                                          const SizedBox(width: 4),
+                                          const Text(
+                                            'Prix total',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
                                           Text(
-                                              '${transaction.numberOfGuests} invités'),
+                                            '${transaction.totalPrice.toStringAsFixed(2)} €',
+                                            style: const TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.blue,
+                                            ),
+                                          ),
                                         ],
                                       ),
-                                      Text(
-                                        '\$${transaction.totalPrice.toStringAsFixed(2)}',
-                                        style: const TextStyle(
-                                          fontSize: 20,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue,
-                                        ),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.end,
+                                        children: [
+                                          const Text(
+                                            'Créée le',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${transaction.createdAt.day.toString().padLeft(2, '0')}/${transaction.createdAt.month.toString().padLeft(2, '0')}/${transaction.createdAt.year}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -424,9 +573,9 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
                                       Expanded(
                                         child: OutlinedButton.icon(
                                           onPressed: () =>
-                                              _showEditDialog(transaction),
-                                          icon: const Icon(Icons.edit),
-                                          label: const Text('Modifier'),
+                                              _showBookingDetails(transaction),
+                                          icon: const Icon(Icons.info),
+                                          label: const Text('Détails'),
                                           style: OutlinedButton.styleFrom(
                                             foregroundColor: Colors.blue,
                                           ),

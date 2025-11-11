@@ -16,9 +16,11 @@ class FavoriteRepository {
     }
   }
 
-  Future<List<Favorite>> getAllFavorites() async {
+  Future<List<Favorite>> getAllFavorites(String userEmail) async {
     final List<Map<String, dynamic>> maps = await _dbHelper.query(
       DatabaseHelper.tableFavorites,
+      where: 'user_email = ?',
+      whereArgs: [userEmail],
       orderBy: 'created_at DESC',
     );
     return List.generate(maps.length, (i) {
@@ -34,11 +36,11 @@ class FavoriteRepository {
     return map != null ? Favorite.fromMap(map) : null;
   }
 
-  Future<bool> isFavorite(String houseId) async {
+  Future<bool> isFavorite(int houseId, String userEmail) async {
     final List<Map<String, dynamic>> maps = await _dbHelper.query(
       DatabaseHelper.tableFavorites,
-      where: 'house_id = ?',
-      whereArgs: [houseId],
+      where: 'house_id = ? AND user_email = ?',
+      whereArgs: [houseId, userEmail],
       limit: 1,
     );
     return maps.isNotEmpty;
@@ -51,7 +53,7 @@ class FavoriteRepository {
     );
   }
 
-  Future<int> deleteFavoriteByHouseId(String houseId) async {
+  Future<int> deleteFavoriteByHouseId(int houseId) async {
     final db = await _dbHelper.database;
     return await db.delete(
       DatabaseHelper.tableFavorites,

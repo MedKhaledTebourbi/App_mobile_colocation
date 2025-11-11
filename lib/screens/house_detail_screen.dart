@@ -3,11 +3,13 @@ import '../models/house.dart';
 import '../models/favorite.dart';
 import '../repositories/favorite_repository.dart';
 import 'booking_form_screen.dart';
+import 'agent_chat_screen.dart';
 
 class HouseDetailScreen extends StatefulWidget {
   final House house;
+  final String? userEmail;
 
-  const HouseDetailScreen({super.key, required this.house});
+  const HouseDetailScreen({super.key, required this.house, this.userEmail});
 
   @override
   State<HouseDetailScreen> createState() => _HouseDetailScreenState();
@@ -25,7 +27,13 @@ class _HouseDetailScreenState extends State<HouseDetailScreen> {
   }
 
   Future<void> _checkFavoriteStatus() async {
-    final status = await _favoriteRepo.isFavorite(widget.house.id);
+    if (widget.userEmail == null) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+    final status = await _favoriteRepo.isFavorite(widget.house.id, widget.userEmail!);
     setState(() {
       isFavorite = status;
       _isLoading = false;
@@ -33,6 +41,16 @@ class _HouseDetailScreenState extends State<HouseDetailScreen> {
   }
 
   Future<void> _toggleFavorite() async {
+    if (widget.userEmail == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Veuillez vous connecter'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     if (isFavorite) {
       await _favoriteRepo.deleteFavoriteByHouseId(widget.house.id);
       if (mounted) {
@@ -53,6 +71,7 @@ class _HouseDetailScreenState extends State<HouseDetailScreen> {
         houseRating: widget.house.rating,
         bedrooms: widget.house.bedrooms,
         bathrooms: widget.house.bathrooms,
+        userEmail: widget.userEmail!,
       );
       await _favoriteRepo.insertFavorite(favorite);
       if (mounted) {
@@ -357,7 +376,18 @@ class _HouseDetailScreenState extends State<HouseDetailScreen> {
                               ),
                               const SizedBox(width: 8),
                               IconButton(
-                                onPressed: () {},
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => AgentChatScreen(
+                                        agentName: widget.house.agentName,
+                                        agentEmail: widget.house.ownerEmail,
+                                        houseName: widget.house.title,
+                                      ),
+                                    ),
+                                  );
+                                },
                                 icon: const Icon(Icons.message),
                                 style: IconButton.styleFrom(
                                   backgroundColor: Colors.white,
@@ -390,40 +420,66 @@ class _HouseDetailScreenState extends State<HouseDetailScreen> {
           ],
         ),
         child: SafeArea(
-          child: ElevatedButton(
-            onPressed: () async {
-              final result = await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => BookingFormScreen(house: widget.house),
-                ),
-              );
-              
-              if (result == true && mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Réservation cré��e avec succès!'),
-                    backgroundColor: Colors.green,
+          child: Row(
+            children: [
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _toggleFavorite,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isFavorite ? Colors.red : Colors.grey[300],
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
                   ),
-                );
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.blue,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+                  child: Icon(
+                    isFavorite ? Icons.favorite : Icons.favorite_border,
+                    size: 24,
+                  ),
+                ),
               ),
-              elevation: 0,
-            ),
-            child: const Text(
-              'Book Now',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => BookingFormScreen(house: widget.house),
+                      ),
+                    ).then((result) {
+                      if (result == true && mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Réservation créée avec succès!'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    'Réserver',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
         ),
       ),

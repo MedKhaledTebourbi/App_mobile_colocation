@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import '../models/favorite.dart';
+import '../models/user.dart';
 import '../repositories/favorite_repository.dart';
 
 class FavoritesScreen extends StatefulWidget {
-  const FavoritesScreen({super.key});
+  final User user;
+
+  const FavoritesScreen({super.key, required this.user});
 
   @override
   State<FavoritesScreen> createState() => _FavoritesScreenState();
@@ -25,7 +28,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       _isLoading = true;
     });
 
-    final favorites = await _favoriteRepo.getAllFavorites();
+    final favorites = await _favoriteRepo.getAllFavorites(widget.user.email);
     setState(() {
       _favorites = favorites;
       _isLoading = false;

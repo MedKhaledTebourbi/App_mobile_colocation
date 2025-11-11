@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 import '../models/house.dart';
 import '../models/transaction.dart' as app_transaction;
+import '../models/notification_model.dart';
 import '../repositories/transaction_repository.dart';
+import '../repositories/notification_repository.dart';
+import '../repositories/booking_repository.dart';
+import '../providers/session_provider.dart';
+import '../services/notification_service.dart';
+import '../services/payment_service.dart';
+import '../services/house_status_service.dart';
+import '../services/house_availability_calculator.dart';
+import '../utils/logger.dart';
+import 'payment_screen.dart';
 
 class BookingFormScreen extends StatefulWidget {
   final House house;
@@ -15,6 +25,9 @@ class BookingFormScreen extends StatefulWidget {
 class _BookingFormScreenState extends State<BookingFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final TransactionRepository _transactionRepo = TransactionRepository();
+  final NotificationRepository _notificationRepo = NotificationRepository();
+  final BookingRepository _bookingRepo = BookingRepository();
+  final HouseStatusService _houseStatusService = HouseStatusService();
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -68,38 +81,131 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
         _isLoading = true;
       });
 
-      final transaction = app_transaction.Transaction(
-        houseId: widget.house.id,
-        houseTitle: widget.house.title,
-        houseImage: widget.house.imageUrl,
-        customerName: _nameController.text,
-        customerEmail: _emailController.text,
-        customerPhone: _phoneController.text,
-        checkInDate: _checkInDate,
-        checkOutDate: _checkOutDate,
-        numberOfGuests: _numberOfGuests,
-        totalPrice: totalPrice,
-        status: 'pending',
-      );
-
       try {
-        await _transactionRepo.insertTransaction(transaction);
+        // Get the latest house status dynamically
+        final calculator = HouseAvailabilityCalculator();
+        final currentStatus = await calculator.calculateHouseStatus(widget.house);
+
+        // Check if house is already reserved
+        if (currentStatus == 'Réservée') {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Cette maison est déjà réservée et n\'est pas disponible'),
+                backgroundColor: Colors.red,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+
+        // Use the email from the form (customer email)
+        final bookerEmail = _emailController.text.trim();
         
+        // Check if client already has an active booking for this house
+        final hasActiveBooking = await _bookingRepo.hasActiveBookingForHouse(
+          bookerEmail,
+          widget.house.id,
+        );
+
+        if (hasActiveBooking) {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+            });
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Vous avez déjà une réservation active pour cette maison'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+
+        // Create transaction for booking
+        final transaction = app_transaction.Transaction(
+          houseId: widget.house.id,
+          houseTitle: widget.house.title,
+          houseImage: widget.house.imageUrl,
+          customerName: _nameController.text,
+          customerEmail: bookerEmail,
+          customerPhone: _phoneController.text,
+          checkInDate: _checkInDate,
+          checkOutDate: _checkOutDate,
+          numberOfGuests: _numberOfGuests,
+          totalPrice: totalPrice,
+          status: 'pending',
+        );
+
+        // Save transaction to database
+        final transactionId = await _transactionRepo.insertTransaction(transaction);
+
+        Logger.info('Transaction inserted with ID: $transactionId');
+
+        // Update house tag to "Pending"
+        await _houseStatusService.markAsPending(widget.house.id);
+
+        // Create notification for house owner
+        final notification = NotificationModel(
+          houseId: widget.house.id,
+          houseTitle: widget.house.title,
+          houseOwnerEmail: widget.house.ownerEmail,
+          bookerId: 0,
+          bookerName: _nameController.text,
+          bookerEmail: bookerEmail,
+          checkInDate: _checkInDate,
+          checkOutDate: _checkOutDate,
+          totalPrice: totalPrice,
+          status: 'pending',
+        );
+
+        // Save notification to database
+        final notificationId = await _notificationRepo.insertNotification(notification);
+        notification.id = notificationId;
+
+        // Also add to session for real-time updates
+        SessionProvider().addNotification(notification);
+
         if (mounted) {
           setState(() {
             _isLoading = false;
           });
 
+          // Show booking notification
+          final notificationService = NotificationService();
+          notificationService.showBookingRequestNotification(
+            context,
+            _nameController.text,
+            widget.house.title,
+          );
+
+          Logger.info('Booking created successfully with transaction ID $transactionId');
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Réservation créée avec succès!'),
+              content: Text('Réservation créée avec succès! En attente de validation du propriétaire.'),
               backgroundColor: Colors.green,
+              duration: Duration(seconds: 3),
             ),
           );
 
-          Navigator.pop(context, true);
+          // Return to previous screen
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted) {
+              Navigator.pop(context, true);
+            }
+          });
         }
       } catch (e) {
+        Logger.error('Error in booking submission', e);
         if (mounted) {
           setState(() {
             _isLoading = false;

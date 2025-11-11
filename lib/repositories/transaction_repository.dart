@@ -72,4 +72,16 @@ class TransactionRepository {
     );
     return (result.first['total'] as num?)?.toDouble() ?? 0.0;
   }
+
+  Future<List<Transaction>> getTransactionsByCustomerEmail(String customerEmail) async {
+    final List<Map<String, dynamic>> maps = await _dbHelper.query(
+      DatabaseHelper.tableTransactions,
+      where: 'customer_email = ?',
+      whereArgs: [customerEmail],
+      orderBy: 'created_at DESC',
+    );
+    return List.generate(maps.length, (i) {
+      return Transaction.fromMap(maps[i]);
+    });
+  }
 }
